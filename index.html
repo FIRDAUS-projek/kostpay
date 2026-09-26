@@ -608,22 +608,50 @@
             }
         }
 
-        async function sendToCloud(action, payload = {}) {
-            if (!appSettings.webAppUrl) return;
-            updateSyncStatusUI('syncing');
-            try {
-                await fetch(appSettings.webAppUrl, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: action, ...payload })
-                });
-                updateSyncStatusUI('connected');
-            } catch (err) {
-                console.error("Cloud Send Error:", err);
-                updateSyncStatusUI('error');
-            }
+      async function sendToCloud(action, payload = {}) {
+    if (!appSettings.webAppUrl) return;
+    updateSyncStatusUI('syncing');
+
+    try {
+        // Gunakan URLSearchParams agar data terkirim sebagai Form Data yang aman dari masalah CORS
+        const params = new URLSearchParams();
+        params.append('action', action);
+
+        if (action === 'save_billing' && payload.data) {
+            const b = payload.data;
+            const kwhUsed = Math.max(0, b.kwhAkhir - b.kwhAwal);
+            const listrikCost = kwhUsed * (b.tarifKwh || appSettings.tarifKwh);
+            const totalCost = listrikCost + b.biayaSewa;
+
+            params.append('id', b.id || '');
+            params.append('kamar', b.noKamar || '');
+            params.append('penghuni', b.namaPenghuni || '');
+            params.append('meteranAwal', b.kwhAwal || 0);
+            params.append('meteranAkhir', b.kwhAkhir || 0);
+            params.append('pemakaian', kwhUsed + ' kWh');
+            params.append('biayaListrik', formatRp(listrikCost));
+            params.append('sewaBeban', formatRp(b.biayaSewa));
+            params.append('totalTagihan', formatRp(totalCost));
+            params.append('jatuhTempo', b.jatuhTempo ? formatDateIndo(b.jatuhTempo) : '-');
+            params.append('status', b.isPaid ? 'Lunas' : 'Belum Bayar');
+            params.append('catatan', b.catatan || '');
         }
+
+        await fetch(appSettings.webAppUrl, {
+            method: 'POST',
+            mode: 'no-cors', // Aman dikirim tanpa CORS error
+            headers: {
+                'Content-Type': 'application/x-www-form-encoding'
+            },
+            body: params.toString()
+        });
+
+        updateSyncStatusUI('connected');
+    } catch (err) {
+        console.error("Cloud Send Error:", err);
+        updateSyncStatusUI('error');
+    }
+}
 
         function openTarifModal() {
             document.getElementById('settingTarifKwh').value = appSettings.tarifKwh;
